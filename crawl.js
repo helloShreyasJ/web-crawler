@@ -1,23 +1,62 @@
 const jsdom = require("jsdom");
 const { JSDOM } = jsdom;
 
-async function crawlPage(currentURL){
-  console.log(`crawling ${currentURL}`)
+async function crawlPage(currentURL, baseURL, pages){
+  // currentURL is the page that the crawler is currently crawling
+  // baseURL is normalised currentURL
+  // pages is an object that is used to keep track of the number of times we have seen each internal link
+
+  // The crawlPage function always needs to return an updated version of pages
+
+  //Making baseURL and currentURL JavaScript interactable objects.
+  const currentURlObj = new URL(currentURL);
+  const baseURLObj = new URL(baseURL);
+
+  if (currentURlObj.hostname !== baseURLObj.hostname){
+    return pages;
+  }
+
+  const normalisedURL = normaliseURL(currentURL)
+
+  // if we've already visited this page
+  // just increase the count and don't repeat
+  // the http request
+  if (pages[normalisedURL] > 0){
+    pages[normalisedURL]++;
+    return pages;
+  }
+
+  // initialize this page in the map
+  // since it doesn't exist yet
+  pages[normalisedURL] = 1;
+
+  // fetch and parse the html of the currentURL
+  console.log(`crawling ${currentURL}`);
+  let htmlBody = '';
+
   try {
+    console.log(`crawling ${currentURL}`)
     const resp = await fetch(currentURL)
     if (resp.status > 399){
-      console.log(`Got HTTP error, status code: ${resp.status}`)
+      console.log(`Got HTTP error, status code: ${resp.status}`);
       return
     }
     const contentType = resp.headers.get('content-type')
     if (!contentType.includes('text/html')){
-      console.log(`Got non-html response: ${contentType}`)
+      console.log(`Got non-html response: ${contentType}`);
       return
     }
     console.log(await resp.text())
   } catch (err){
-    console.log(err.message)
+    console.log(err.message);
   }
+
+  const nextURLs = getURLsFromHTML(htmlBody, baseURL)
+  for (const nextURL of nextURLs){
+    pages = await crawlPage(baseURL, nextURL, pages)
+  }
+
+  return pages;
 }
 
 
