@@ -1,83 +1,69 @@
 const jsdom = require("jsdom");
 const { JSDOM } = jsdom;
 
-async function crawlPage(currentURL, baseURL, pages){
-  // currentURL is the page that the crawler is currently crawling
-  // baseURL is normalised currentURL
-  // pages is an object that is used to keep track of the number of times we have seen each internal link
-
-  // The crawlPage function always needs to return an updated version of pages
-
-  //Making baseURL and currentURL JavaScript interactable objects.
+async function crawlPage(currentURL, baseURL, pages) { // pages is a sort-of map of currentURLs. It keeps track of the url and the times we have encountered it.
   const currentURlObj = new URL(currentURL);
   const baseURLObj = new URL(baseURL);
 
-  if (currentURlObj.hostname !== baseURLObj.hostname){
+  if (currentURlObj.hostname !== baseURLObj.hostname) { // If hostnames are different skip the page
     return pages;
   }
 
-  const normalisedURL = normaliseURL(currentURL)
+  const normalisedURL = normaliseURL(currentURL); // Normalise currentURL
 
-  // if we've already visited this page
-  // just increase the count and don't repeat
-  // the http request
-  if (pages[normalisedURL] > 0){
+  if (pages[normalisedURL] > 0) { // We have seen the URL before we increment its count
     pages[normalisedURL]++;
     return pages;
   }
 
-  // initialize this page in the map
-  // since it doesn't exist yet
-  pages[normalisedURL] = 1;
+  pages[normalisedURL] = 1; // We initialise the count to 1, because we have seen this page
 
-  // fetch and parse the html of the currentURL
   console.log(`crawling ${currentURL}`);
   let htmlBody = '';
 
   try {
-    console.log(`crawling ${currentURL}`)
-    const resp = await fetch(currentURL)
-    if (resp.status > 399){
+    const resp = await fetch(currentURL);
+    if (resp.status > 399) { // If status code is over 399 (400+) then its an error
       console.log(`Got HTTP error, status code: ${resp.status}`);
-      return
+      return pages;
     }
-    const contentType = resp.headers.get('content-type')
-    if (!contentType.includes('text/html')){
+    const contentType = resp.headers.get('content-type'); // If the response is not HTML content return pages
+    if (!contentType || !contentType.includes('text/html')) {
       console.log(`Got non-html response: ${contentType}`);
-      return
+      return pages;
     }
-    console.log(await resp.text())
-  } catch (err){
+    htmlBody = await resp.text(); // extract html body from promise thats resolved as a string
+  } catch (err) { // log any errors that occur during fetch
     console.log(err.message);
+    return pages;
   }
 
-  const nextURLs = getURLsFromHTML(htmlBody, baseURL)
-  for (const nextURL of nextURLs){
-    pages = await crawlPage(baseURL, nextURL, pages)
+  // recursion: function calling itself
+  const nextURLs = getURLsFromHTML(htmlBody, baseURL); // getting a url from the html of the baseURL
+  for (const nextURL of nextURLs) {
+    pages = await crawlPage(nextURL, baseURL, pages); // calling the function again. this time, the nextURL is the currentURL
   }
 
   return pages;
 }
 
-
 function getURLsFromHTML(htmlBody, baseURL) {
   const urls = [];
-  const dom = new JSDOM(htmlBody);
+  const dom = new JSDOM(htmlBody); // to interact with htmlBody convert it to a JSDOM object 
   const linkElements = dom.window.document.querySelectorAll('a');
-  for(const linkElement of linkElements) {
-    if(linkElement.href.slice(0, 1) === "/") { //If the href begins with / then this is an absolute url. Eg: (/path/)
-      try{
-        const URLObject = new URL(`${baseURL}${linkElement.href}`);
-        urls.push(`${URLObject.href}`);
-      } catch(err) {
+  for (const linkElement of linkElements) {
+    if (linkElement.href.slice(0, 1) === "/") { // relative
+      try {
+        const URLObject = new URL(linkElement.href, baseURL);
+        urls.push(URLObject.href);
+      } catch (err) {
         console.log(`Invalid Relative URL entered, error message: ${err.message}`);
       }
-      //relative
-    } else {
-      try{
+    } else { // absolute
+      try {
         const URLObject = new URL(linkElement.href);
         urls.push(URLObject.href);
-      } catch(err) {
+      } catch (err) {
         console.log(`Invalid Absolute URL entered, error message: ${err.message}`);
       }
     }
@@ -86,11 +72,12 @@ function getURLsFromHTML(htmlBody, baseURL) {
 }
 
 function normaliseURL(URLString) {
-  const urlObject = new URL(URLString);
+  const urlObject = new URL(URLString); // convert to URL object
   const hostPath = `${urlObject.hostname}${urlObject.pathname}`;
-  if(hostPath.length > 0 && hostPath.slice(-1) === '/') {
-    return hostPath.slice(0, -1); //Returns everything BUT the last character
-  } 
+  if (hostPath.length > 0 && hostPath.slice(-1) === '/') { // If url ends with forward slash, normalise it
+    return hostPath.slice(0, -1);
+  }
   return hostPath;
 }
-module.exports = { normaliseURL, getURLsFromHTML, crawlPage};
+
+module.exports = { normaliseURL, getURLsFromHTML, crawlPage }; // export functions
